@@ -38,4 +38,4 @@ The project uses a **Modular Hybrid Architecture** to balance complex physics ca
 
 ## 📝 Citation
 If you use this simulation or the generated figures in your research paper, please cite it as:
-> *Naveen, P. (2026). QPC Volumetric Entanglement: A 5-Field Superposition Minimum Model. GitHub Repository: https://github.com/arvind199584/qpc-quantum-simulation*
+> *QPC Volumetric Entanglement: A 5-Field Superposition Minimum Model. GitHub Repository: https://github.com/arvind199584/qpc-quantum-simulation*
