@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>QPC Dual-View Quantum Monitor</title>
+    <style>
+        body { margin: 0; background-color: #000; color: #00ff00; font-family: monospace; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        #top-viewport { height: 50%; border-bottom: 1px solid #00ff00; position: relative; display: flex; flex-direction: column; }
+        #bottom-viewport { height: 50%; display: flex; }
+        #sidebar { width: 300px; background: rgba(0, 20, 0, 0.9); border-right: 1px solid #00ff00; padding: 20px; overflow-y: auto; z-index: 100; }
+        #container-3d { flex-grow: 1; height: 100%; position: relative; }
+        #canvas-2d { flex-grow: 1; width: 100%; background: #000500; }
+        .view-label { position: absolute; top: 10px; right: 10px; font-size: 12px; color: #00ff00; background: rgba(0,0,0,0.5); padding: 5px; border: 1px solid #00ff00; z-index: 10; }
+        .control-group { margin-bottom: 15px; border: 1px solid #004400; padding: 10px; }
+        label { display: block; font-size: 11px; margin-bottom: 5px; }
+        input[type="range"] { width: 100%; }
+        .field-tag { padding: 2px 5px; font-weight: bold; border-radius: 3px; font-size: 10px; }
+        #tag-0 { background: #ff3333; color: white; }
+        #tag-1 { background: #3333ff; color: white; }
+        #tag-2 { background: #33ff33; color: black; }
+        #tag-3 { background: #ffff33; color: black; }
+        #tag-4 { background: #ff33ff; color: white; }
+        button { background: #004400; color: #00ff00; border: 1px solid #00ff00; padding: 5px; width: 100%; cursor: pointer; margin-top: 5px; font-size: 10px; }
+        button:hover { background: #006600; }
+    </style>
+</head>
+<body>
+    <div id="top-viewport">
+        <div class="view-label">TOP: 2D DUAL-QUBIT RESONANCE ANALYZER</div>
+        <canvas id="canvas-2d"></canvas>
+    </div>
+
+    <div id="bottom-viewport">
+        <div id="sidebar">
+            <h2 style="font-size: 14px; border-bottom: 1px solid #00ff00;">QPC MASTER CONTROLS</h2>
+            <div id="field-controls"></div>
+            <div class="control-group">
+                <div style="font-size: 10px; color: #aaa; margin-bottom: 5px; border-top: 1px solid #003300; padding-top: 10px;">RESEARCH CAPTURE</div>
+                <button onclick="capture2D()">SAVE 2D ANALYZER PNG</button>
+                <button onclick="capture3D()">SAVE 3D CHAMBER PNG</button>
+            </div>
+        </div>
+        <div id="container-3d">
+            <div class="view-label">BOTTOM: 3D QPC CHAMBER</div>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { LatticeManager } from './js/modules/LatticeManager.js';
+        import { QubitManager } from './js/modules/QubitManager.js';
+        import { FieldManager } from './js/modules/FieldManager.js';
+        import { AnimationEngine } from './js/modules/AnimationEngine.js';
+
+        let scene, camera, renderer, controls;
+        let lattice, qubits, animator;
+        let fields = [];
+        let simData = null;
+        let currentFrame = 0;
+
+        const canvas2d = document.getElementById('canvas-2d');
+        const ctx2d = canvas2d.getContext('2d');
+
+        async function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, (window.innerWidth - 300) / (window.innerHeight / 2), 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+            renderer.setSize(window.innerWidth - 300, window.innerHeight / 2);
+            document.getElementById('container-3d').appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            camera.position.set(100, 100, 100);
+
+            lattice = new LatticeManager(scene, 100);
+            qubits = new QubitManager(scene, 159, 100);
+            
+            const fieldSpecs = [
+                { name: 'EM', color: 0xff3333, offset: -40 },
+                { name: 'Higgs', color: 0x3333ff, offset: -20 },
+                { name: 'Strong', color: 0x33ff33, offset: 0 },
+                { name: 'Weak', color: 0xffff33, offset: 20 },
+                { name: 'Lepton', color: 0xff33ff, offset: 40 }
+            ];
+
+            const controlsContainer = document.getElementById('field-controls');
+            fieldSpecs.forEach((spec, i) => {
+                const field = new FieldManager(scene, spec.name, spec.color, spec.offset, 100);
+                fields.push(field);
+
+                const group = document.createElement('div');
+                group.className = 'control-group';
+                group.innerHTML = `
+                    <div style="display:flex; justify-content:space-between;">
+                        <label><span class="field-tag" id="tag-${i}">${spec.name}</span></label>
+                        <input type="checkbox" id="toggle-${i}" checked onchange="window.toggleField(${i})">
+                    </div>
+                    <input type="range" class="freq-slider" id="freq-${i}" min="0.1" max="5.0" step="0.1" value="1.0">
+                `;
+                controlsContainer.appendChild(group);
+            });
+
+            window.toggleField = (idx) => { fields[idx].mesh.visible = document.getElementById(`toggle-${idx}`).checked; };
+            
+            window.capture2D = () => {
+                const link = document.createElement('a');
+                link.download = 'QPC_2D_Resonance_Figure.png';
+                link.href = canvas2d.toDataURL('image/png');
+                link.click();
+            };
+
+            window.capture3D = () => {
+                const link = document.createElement('a');
+                link.download = 'QPC_3D_Volumetric_Figure.png';
+                link.href = renderer.domElement.toDataURL('image/png');
+                link.click();
+            };
+
+            animator = new AnimationEngine(scene, 50);
+            resize();
+            loadData();
+            animate();
+        }
+
+        async function loadData() {
+            try {
+                const response = await fetch('qpc_sim_data.json', { cache: "no-store" });
+                simData = await response.json();
+                qubits.updatePositions(simData.qubits);
+            } catch (e) {}
+            setTimeout(loadData, 3000);
+        }
+
+        function draw2DView(time) {
+            const w = canvas2d.width;
+            const h = canvas2d.height;
+            ctx2d.clearRect(0, 0, w, h);
+            const q1x = w * 0.3, q2x = w * 0.7, qy = h * 0.5;
+            
+            const fieldSpecs = [
+                { color: '#ff3333', amp: 45, wavelength: 0.04, speed: 4.0 },
+                { color: '#3333ff', amp: 35, wavelength: 0.06, speed: 3.2 },
+                { color: '#33ff33', amp: 55, wavelength: 0.03, speed: 4.8 },
+                { color: '#ffff33', amp: 25, wavelength: 0.08, speed: 2.0 },
+                { color: '#ff33ff', amp: 40, wavelength: 0.05, speed: 6.0 }
+            ];
+
+            let q1_total_amp = 0, q2_total_amp = 0, active_count = 0;
+
+            fieldSpecs.forEach((spec, i) => {
+                const sliderFreq = parseFloat(document.getElementById(`freq-${i}`).value);
+                const active = document.getElementById(`toggle-${i}`).checked;
+                if (!active) return;
+                active_count++;
+
+                ctx2d.beginPath();
+                ctx2d.strokeStyle = spec.color;
+                ctx2d.globalAlpha = 0.5;
+                ctx2d.lineWidth = 2;
+
+                const dynamicFreq = sliderFreq * spec.speed;
+                for (let x = q1x - 100; x <= q2x + 100; x++) {
+                    const phase = (x * spec.wavelength) - (time * dynamicFreq);
+                    const y = qy + (Math.sin(phase) * spec.amp);
+                    if (x === q1x - 100) ctx2d.moveTo(x, y); else ctx2d.lineTo(x, y);
+                    if (Math.abs(x - q1x) < 0.5) q1_total_amp += Math.sin(phase);
+                    if (Math.abs(x - q2x) < 0.5) q2_total_amp += Math.sin(phase);
+                }
+                ctx2d.stroke();
+            });
+
+            const threshold = 0.15 * active_count;
+            const isDestructive = active_count > 0 && Math.abs(q1_total_amp) < threshold && Math.abs(q2_total_amp) < threshold;
+
+            if (isDestructive) {
+                ctx2d.strokeStyle = '#ffffff'; ctx2d.lineWidth = 6;
+                ctx2d.beginPath(); ctx2d.moveTo(q1x, qy); ctx2d.lineTo(q2x, qy); ctx2d.stroke();
+                ctx2d.fillStyle = "#ffffff";
+                ctx2d.beginPath(); ctx2d.arc(q1x, qy, 15, 0, Math.PI*2); ctx2d.fill();
+                ctx2d.beginPath(); ctx2d.arc(q2x, qy, 15, 0, Math.PI*2); ctx2d.fill();
+            }
+
+            ctx2d.globalAlpha = 1.0;
+            ctx2d.fillStyle = isDestructive ? '#ffffff' : '#00ff00';
+            ctx2d.beginPath(); ctx2d.arc(q1x, qy, 10, 0, Math.PI*2); ctx2d.fill();
+            ctx2d.beginPath(); ctx2d.arc(q2x, qy, 10, 0, Math.PI*2); ctx2d.fill();
+            
+            ctx2d.strokeStyle = '#003300'; ctx2d.setLineDash([5, 5]);
+            ctx2d.beginPath(); ctx2d.moveTo(q1x-50, qy); ctx2d.lineTo(q2x+50, qy); ctx2d.stroke();
+            ctx2d.setLineDash([]);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = Date.now() * 0.001;
+            draw2DView(time);
+            if (simData && simData.frames[currentFrame]) {
+                const frame = simData.frames[currentFrame];
+                fields.forEach((field, i) => {
+                    const freq = parseFloat(document.getElementById(`freq-${i}`).value);
+                    field.update(freq, time * 2);
+                });
+                animator.animateEntanglement(frame.events, simData.qubits);
+                currentFrame = (currentFrame + 1) % simData.frames.length;
+            }
+            renderer.render(scene, camera);
+            controls.update();
+        }
+
+        function resize() {
+            const w = window.innerWidth - 300;
+            const h = window.innerHeight / 2;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+            canvas2d.width = window.innerWidth;
+            canvas2d.height = window.innerHeight / 2;
+        }
+
+        window.addEventListener('resize', resize);
+        init();
+    </script>
+</body>
+</html>
